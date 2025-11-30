@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Photo Upload & Search</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+            max-width: 900px;
+        }
+        h2 {
+            margin-top: 40px;
+        }
+        input, button {
+            padding: 10px;
+            font-size: 15px;
+        }
+        button {
+            cursor: pointer;
+        }
+        #results, #uploadedPreview {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+        }
+        img {
+            max-width: 100%;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Photo Upload & Search</h1>
+
+<!-- -------------------- UPLOAD SECTION -------------------- -->
+
+<h2>Upload Photo</h2>
+
+<input type="file" id="uploadFile" accept="image/*">
+<br><br>
+<input type="text" id="uploadLabels" placeholder="Custom labels (comma-separated)">
+<br><br>
+<button onclick="uploadPhoto()">Upload</button>
+
+<div id="uploadedPreview"></div>
+
+<!-- -------------------- SEARCH SECTION -------------------- -->
+
+<h2>Search Photos</h2>
+
+<input type="text" id="searchInput" placeholder="Search labels (e.g., Sam)">
+<button onclick="searchPhotos()">Search</button>
+
+<div id="results"></div>
+
+<script>
+    const API_BASE = "https://f1ifimq0p3.execute-api.us-east-1.amazonaws.com/v2";
+
+    /* ============================================================
+       UPLOAD PHOTO
+    ============================================================ */
+
+    async function uploadPhoto() {
+        const fileInput = document.getElementById("uploadFile");
+        const labelsInput = document.getElementById("uploadLabels").value.trim();
+
+        if (!fileInput.files.length) {
+            alert("Please select a file.");
+            return;
+        }
+
+        const file = fileInput.files[0];
+        const filename = encodeURIComponent(file.name);
+
+        const uploadURL = `${API_BASE}/upload/${filename}`;
+
+        try {
+            const res = await fetch(uploadURL, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": file.type,
+                    "x-amz-meta-customLabels": labelsInput
+                },
+                body: file
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                alert("Upload failed: " + text);
+                return;
+            }
+
+            showUploadedPreview(file);
+        } catch (err) {
+            console.error(err);
+            alert("Upload error: " + err);
+        }
+    }
+
+    function showUploadedPreview(file) {
+        const container = document.getElementById("uploadedPreview");
+        container.innerHTML = "";
+
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+
+        const name = document.createElement("p");
+        name.textContent = "Uploaded: " + file.name;
+
+        card.appendChild(img);
+        card.appendChild(name);
+        container.appendChild(card);
+    }
+
+    /* ============================================================
+       SEARCH PHOTOS
+    ============================================================ */
+
+    async function searchPhotos() {
+        const query = document.getElementById("searchInput").value.trim();
+
+        if (!query) {
+            alert("Enter search text.");
+            return;
+        }
+
+        const searchURL = `${API_BASE}/search?q=${encodeURIComponent(query)}`;
+
+        try {
+            const res = await fetch(searchURL);
+            const data = await res.json();
+
+            console.log("Search response:", data);
+            renderResults(data.results || []);
+        } catch (err) {
+            console.error("Search error:", err);
+            alert("Search error: " + err);
+        }
+    }
+
+    function renderResults(results) {
+        const container = document.getElementById("results");
+        container.innerHTML = "";
+
+        if (results.length === 0) {
+            container.innerHTML = "<p>No results found.</p>";
+            return;
+        }
+
+        results.forEach(item => {
+            const card = document.createElement("div");
+            card.className = "card";
+
+            const img = document.createElement("img");
+            img.src = item.url;
+
+            const labels = document.createElement("p");
+            labels.textContent = "Labels: " + item.labels.join(", ");
+
+            card.appendChild(img);
+            card.appendChild(labels);
+            container.appendChild(card);
+        });
+    }
+</script>
+
+</body>
+</html>
