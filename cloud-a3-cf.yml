@@ -1,0 +1,302 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Assignment 3 Infrastructure (NO CodePipeline).
+  Creates: S3 frontend bucket, S3 photos bucket, Lambdas, API Gateway, IAM roles, S3->Lambda trigger.
+
+Parameters:
+  FrontendBucketName:
+    Type: String
+    Default: "9223-b1-cf"
+  PhotosBucketName:
+    Type: String
+    Default: "9223-b2-cf"
+
+Resources:
+
+  #########################################################
+  # 1. FRONTEND BUCKET (Public Static Website)
+  #########################################################
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref FrontendBucketName
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+    DeletionPolicy: Retain
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadGet
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+
+  #########################################################
+  # 2. PHOTOS BUCKET (Triggers index-photos Lambda)
+  #########################################################
+  PhotosBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref PhotosBucketName
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:Put"
+            Function: !GetAtt LF1.Arn
+    DependsOn:
+      - LF1
+      - S3InvokePermission
+    DeletionPolicy: Retain
+
+  #########################################################
+  # Lambda execution role
+  #########################################################
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonRekognitionFullAccess
+        - arn:aws:iam::aws:policy/AmazonLexFullAccess
+        
+
+  #########################################################
+  # 3. Lambda: index-photos (LF1) — ARM64 + Python 3.10
+  #########################################################
+  LF1:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "LF1-cf"
+      Handler: index.handler
+      Runtime: python3.10
+      Architectures: [arm64]
+      Timeout: 30
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              print("LF2 placeholder")
+              print(json.dumps(event))
+              return {"status": "ok"}
+
+  #########################################################
+  # 4. Lambda: search-photos (LF2) — ARM64 + Python 3.10
+  #########################################################
+  SearchPhotosLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "LF2-cf"
+      Handler: index.handler
+      Runtime: python3.10
+      Architectures: [arm64]
+      Timeout: 30
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          ES_ENDPOINT: "https://search-photos-faixytpsvphrppe4zlxax6tpua.us-east-1.es.amazonaws.com"
+          ES_PASSWORD: "Hemanth@123"
+          ES_USER: "admin"
+          LEX_BOT_ALIAS_ID: "TSTALIASID"
+          LEX_BOT_ID: "OHTDOI7O3O"
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              q = event.get("queryStringParameters", {}).get("q", "")
+              return {
+                  "statusCode": 200,
+                  "headers": {"Content-Type":"application/json"},
+                  "body": json.dumps({"query": q, "results": []})
+              }
+
+  #########################################################
+  # 5. S3 → Lambda Trigger (PutObject)
+  #########################################################
+  S3InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LF1
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+    DependsOn: LF1
+
+  #########################################################
+  # 6. API Gateway
+  #########################################################
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: photo-api-cf
+
+  ### /photos
+  ApiPhotosResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: photos
+
+  ### /photos/{object}
+  ApiPhotosObjectResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiPhotosResource
+      PathPart: "{object}"
+
+  ### /search
+  ApiSearchResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: search
+
+  #########################################################
+  # API Gateway Role for S3 Proxy Integration
+  #########################################################
+  ApiGatewayS3Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Write
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "s3:PutObject"
+                Resource: !Sub "${PhotosBucket.Arn}/*"
+
+  #########################################################
+  # PUT /photos/{object} → S3 proxy
+  #########################################################
+  PutPhotoMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiPhotosObjectResource
+      HttpMethod: PUT
+      AuthorizationType: NONE
+      RequestParameters:
+        method.request.path.object: true
+        method.request.header.x-amz-meta-customLabels: false
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+      Integration:
+        Type: AWS
+        Credentials: !GetAtt ApiGatewayS3Role.Arn
+        IntegrationHttpMethod: PUT
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:s3:path/${PhotosBucketName}/{object}"
+        RequestParameters:
+          integration.request.path.object: "method.request.path.object"
+          integration.request.header.x-amz-meta-customLabels: "method.request.header.x-amz-meta-customLabels"
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-amz-meta-customLabels'"
+              method.response.header.Access-Control-Allow-Methods: "'PUT,OPTIONS'"
+
+  #########################################################
+  # OPTIONS /photos/{object} → CORS preflight
+  #########################################################
+  OptionsPhotoMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiPhotosObjectResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+          ResponseModels: {}
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-amz-meta-customLabels'"
+              method.response.header.Access-Control-Allow-Methods: "'PUT,OPTIONS'"
+            ResponseTemplates:
+              application/json: ""
+
+  #########################################################
+  # GET /search → search-photos lambda
+  #########################################################
+  GetSearchMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiSearchResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SearchPhotosLambda.Arn}/invocations"
+
+  LambdaInvokePermissionSearch:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SearchPhotosLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  #########################################################
+  # Deployment
+  #########################################################
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - PutPhotoMethod
+      - OptionsPhotoMethod
+      - GetSearchMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: prod
+
+Outputs:
+  FrontendURL:
+    Description: "URL of the frontend static website"
+    Value: !Sub "http://${FrontendBucketName}.s3-website-${AWS::Region}.amazonaws.com"
+
+  ApiEndpoint:
+    Description: "Base URL for API Gateway"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod"
