@@ -85,7 +85,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: "LF1-cf"
-      Handler: index.handler
+      Handler: LF1.lambda_handler
       Runtime: python3.10
       Architectures: [arm64]
       Timeout: 30
@@ -105,7 +105,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: "LF2-cf"
-      Handler: index.handler
+      Handler: LF2.lambda_handler
       Runtime: python3.10
       Architectures: [arm64]
       Timeout: 30
@@ -146,6 +146,10 @@ Resources:
     Type: AWS::ApiGateway::RestApi
     Properties:
       Name: photo-api-cf
+      BinaryMediaTypes:
+        - image/jpeg
+        - image/png
+        - image/jpg
 
   ### /photos
   ApiPhotosResource:
@@ -153,9 +157,9 @@ Resources:
     Properties:
       RestApiId: !Ref ApiGateway
       ParentId: !GetAtt ApiGateway.RootResourceId
-      PathPart: photos
+      PathPart: upload
 
-  ### /photos/{object}
+  ### /upload/{object}
   ApiPhotosObjectResource:
     Type: AWS::ApiGateway::Resource
     Properties:
@@ -194,7 +198,7 @@ Resources:
                 Resource: !Sub "${PhotosBucket.Arn}/*"
 
   #########################################################
-  # PUT /photos/{object} → S3 proxy
+  # PUT /upload/{item} → S3 proxy
   #########################################################
   PutPhotoMethod:
     Type: AWS::ApiGateway::Method
@@ -212,16 +216,39 @@ Resources:
             method.response.header.Access-Control-Allow-Origin: true
             method.response.header.Access-Control-Allow-Headers: true
             method.response.header.Access-Control-Allow-Methods: true
+        - StatusCode: "403"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+        - StatusCode: "500"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
       Integration:
         Type: AWS
         Credentials: !GetAtt ApiGatewayS3Role.Arn
         IntegrationHttpMethod: PUT
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:s3:path/${PhotosBucketName}/{object}"
+        PassthroughBehavior: WHEN_NO_TEMPLATES
         RequestParameters:
           integration.request.path.object: "method.request.path.object"
           integration.request.header.x-amz-meta-customLabels: "method.request.header.x-amz-meta-customLabels"
         IntegrationResponses:
           - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-amz-meta-customLabels'"
+              method.response.header.Access-Control-Allow-Methods: "'PUT,OPTIONS'"
+            ResponseTemplates:
+              application/json: ""
+          - StatusCode: "403"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-amz-meta-customLabels'"
+              method.response.header.Access-Control-Allow-Methods: "'PUT,OPTIONS'"
+          - StatusCode: "500"
             ResponseParameters:
               method.response.header.Access-Control-Allow-Origin: "'*'"
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-amz-meta-customLabels'"
@@ -243,9 +270,19 @@ Resources:
             method.response.header.Access-Control-Allow-Origin: true
             method.response.header.Access-Control-Allow-Headers: true
             method.response.header.Access-Control-Allow-Methods: true
-          ResponseModels: {}
+        - StatusCode: "403"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+        - StatusCode: "500"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
       Integration:
         Type: MOCK
+        ResponseTransferMode: BUFFERED
         RequestTemplates:
           application/json: '{"statusCode": 200}'
         IntegrationResponses:
@@ -253,10 +290,23 @@ Resources:
             ResponseParameters:
               method.response.header.Access-Control-Allow-Origin: "'*'"
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-amz-meta-customLabels'"
-              method.response.header.Access-Control-Allow-Methods: "'PUT,OPTIONS'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,PUT,GET'"
             ResponseTemplates:
               application/json: ""
-
+          - StatusCode: "403"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-amz-meta-customLabels'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,PUT,GET'"
+            ResponseTemplates:
+              application/json: ""
+          - StatusCode: "502"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-amz-meta-customLabels'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,PUT,GET'"
+            ResponseTemplates:
+              application/json: ""
   #########################################################
   # GET /search → search-photos lambda
   #########################################################
@@ -291,6 +341,7 @@ Resources:
     Properties:
       RestApiId: !Ref ApiGateway
       StageName: prod
+      Description: "Deployment from Swagger spec"
 
 Outputs:
   FrontendURL:
