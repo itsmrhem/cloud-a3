@@ -22,6 +22,7 @@ phases:
   post_build:
     commands:
       - echo "Build completed on `date`"
+      - echo "ls -la"
       - aws lambda update-function-code --function-name LF1-cf --zip-file fileb://LF1.zip
       - aws lambda update-function-code --function-name LF2-cf --zip-file fileb://LF2.zip
 
