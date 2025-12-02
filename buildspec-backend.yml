@@ -2,21 +2,26 @@ version: 0.2
 
 phases:
   install:
-    runtime-versions:
-      python: 3.9
     commands:
-      - echo "Installing dependencies for lambda functions"
-      - pip install -r lambda/requirements.txt -t package
+      - echo "Installing dependencies..."
+      - pip install -r lambda/requirements.txt -t dependencies/
 
   build:
     commands:
-      - echo "Copying lambda functions"
-      - cp lambda/LF1.py package/
-      - cp lambda/LF2.py package/
-      - echo "Creating deployment zip"
-      - cd package && zip -r ../lambda.zip .
+      - echo "Packaging LF1..."
+      - mkdir build1
+      - cp lambda/LF1.py build1/
+      - cp -r dependencies/* build1/ || true
+      - cd build1 && zip -r ../LF1.zip . && cd ..
+
+      - echo "Packaging LF2..."
+      - mkdir build2
+      - cp lambda/LF2.py build2/
+      - cp -r dependencies/* build2/ || true
+      - cd build2 && zip -r ../LF2.zip . && cd ..
 
 artifacts:
   files:
-    - lambda.zip
-  discard-paths: yes
+    - LF1.zip
+    - LF2.zip
+  name: backend-artifacts
