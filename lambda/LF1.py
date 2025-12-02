@@ -11,7 +11,7 @@ ES_ENDPOINT = "https://search-photos-faixytpsvphrppe4zlxax6tpua.us-east-1.es.ama
 ES_USERNAME = "admin"
 ES_PASSWORD = "Hemanth@123"
 INDEX = "photos"
-
+#test
 # AWS clients
 s3 = boto3.client("s3")
 rekognition = boto3.client("rekognition")
