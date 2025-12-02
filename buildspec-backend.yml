@@ -1,0 +1,22 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+    commands:
+      - echo "Installing dependencies for lambda functions"
+      - pip install -r lambda/requirements.txt -t package
+
+  build:
+    commands:
+      - echo "Copying lambda functions"
+      - cp lambda/LF1.py package/
+      - cp lambda/LF2.py package/
+      - echo "Creating deployment zip"
+      - cd package && zip -r ../lambda.zip .
+
+artifacts:
+  files:
+    - lambda.zip
+  discard-paths: yes
