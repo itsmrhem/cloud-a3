@@ -19,6 +19,11 @@ phases:
       - cp lambda/LF2.py build2/
       - cp -r dependencies/* build2/ || true
       - cd build2 && zip -r ../LF2.zip . && cd ..
+  post_build:
+    commands:
+      - echo "Build completed on `date`"
+      - aws lambda update-function-code --function-name LF1-cf --zip-file fileb://LF1.zip
+      - aws lambda update-function-code --function-name LF2-cf --zip-file fileb://LF2.zip
 
 artifacts:
   files:
