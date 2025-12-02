@@ -4,8 +4,8 @@ phases:
   build:
     commands:
       - echo "Preparing index.html for S3 deployment"
-
-artifacts:
-  files:
-    - frontend/index.html
-  discard-paths: yes
+  post_build:
+    commands:
+      - echo "Build completed on `date`"
+      - echo "ls -la"
+      - aws s3 cp frontend/index.html s3://9223-b1-cf/index.html
