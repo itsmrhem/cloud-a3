@@ -11,7 +11,7 @@ ES_ENDPOINT = "https://search-photos-faixytpsvphrppe4zlxax6tpua.us-east-1.es.ama
 ES_USERNAME = "admin"
 ES_PASSWORD = "Hemanth@123"
 INDEX = "photos"
-#test
+
 # AWS clients
 s3 = boto3.client("s3")
 rekognition = boto3.client("rekognition")
@@ -53,6 +53,7 @@ def lambda_handler(event, context):
     metadata = head.get("Metadata", {})
 
     raw_custom = metadata.get("customlabels", "")
+    print("Raw custom labels:", raw_custom)
     custom_labels = (
         [lbl.strip() for lbl in raw_custom.split(",") if lbl.strip()]
         if raw_custom else []

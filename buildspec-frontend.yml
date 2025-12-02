@@ -1,0 +1,11 @@
+version: 0.2
+
+phases:
+  build:
+    commands:
+      - echo "Preparing index.html for S3 deployment"
+
+artifacts:
+  files:
+    - frontend/index.html
+  discard-paths: yes
